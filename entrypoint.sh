@@ -20,6 +20,10 @@ case ${1} in
         /usr/bin/supervisord -nc /etc/supervisor/supervisord.conf &
         SUPERVISOR_PID=$!
         migrate_database
+        if [ -n "${GITLAB_POST_RECONFIGURE_SCRIPT+x}" ]; then
+          echo "Runnning Post Reconfigure Script..."
+          eval ${GITLAB_POST_RECONFIGURE_SCRIPT}
+        fi
         kill -15 $SUPERVISOR_PID
         if ps h -p $SUPERVISOR_PID > /dev/null ; then
         wait $SUPERVISOR_PID || true
