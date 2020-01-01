@@ -2,7 +2,7 @@ FROM ubuntu:xenial-20181218
 
 ARG BUILD_DATE
 ARG VCS_REF
-ARG VERSION=11.6.5
+ARG VERSION=11.6.11
 
 ENV GITLAB_VERSION=${VERSION} \
     RUBY_VERSION=2.5 \
@@ -57,9 +57,13 @@ RUN apt-get update \
 COPY assets/build/ ${GITLAB_BUILD_DIR}/
 RUN bash ${GITLAB_BUILD_DIR}/install.sh
 
+COPY setzero/customize_oauth.rb ${GITLAB_INSTALL_DIR}/config/initializers/
 COPY assets/runtime/ ${GITLAB_RUNTIME_DIR}/
 COPY entrypoint.sh /sbin/entrypoint.sh
-RUN chmod 755 /sbin/entrypoint.sh
+RUN chmod 755 /sbin/entrypoint.sh && \
+    sed -i 's/create_table.*/create_table :lfs_file_locks, options: '"'ROW_FORMAT=DYNAMIC'"' do |t|/' ${GITLAB_INSTALL_DIR}/db/migrate/20180116193854_create_lfs_file_locks.rb && \
+    sed -i 's/t.string :query/t.text :query/' ${GITLAB_INSTALL_DIR}/db/migrate/20180101160629_create_prometheus_metrics.rb && \
+    sed -i 's/t.string "query"/t.text "query"/' ${GITLAB_INSTALL_DIR}/db/schema.rb
 
 LABEL \
     maintainer="sameer@damagehead.com" \
