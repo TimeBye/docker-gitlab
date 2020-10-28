@@ -1,13 +1,13 @@
 version: 2
 jobs:
-build:
-  docker:
-    - image: jdrouet/docker-with-buildx:stable
-  steps:
-    - checkout
-    - setup_remote_docker:
-        version: 18.09.3
-    - run: |
-        docker buildx build \
-          --platform linux/arm64,linux/amd64
-          --tag gitlab:buildx-latest .
+  build:
+    docker:
+      - image: jdrouet/docker-with-buildx:stable
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 18.09.3
+      - run: |
+          docker buildx build \
+            --platform linux/arm64,linux/amd64
+            --tag gitlab:buildx-latest .
