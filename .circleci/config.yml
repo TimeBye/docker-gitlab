@@ -9,5 +9,5 @@ jobs:
           version: 18.09.3
       - run: |
           docker buildx build \
-            --platform linux/arm64,linux/amd64
+            --platform linux/arm64,linux/amd64 \
             --tag gitlab:buildx-latest .
