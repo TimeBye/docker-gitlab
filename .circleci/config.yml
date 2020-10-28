@@ -10,4 +10,4 @@ build:
     - run: |
         docker buildx build \
           --platform linux/arm64,linux/amd64
-          --tag your-username/multiarch-example:buildx-latest .
+          --tag gitlab:buildx-latest .
