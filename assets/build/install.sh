@@ -42,9 +42,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y ${BUIL
 # Applying the mark late here does make the build usable on PaX kernels, but
 # still the build itself must be executed on a non-PaX kernel. It's done here
 # only for simplicity.
-paxctl -Cm "$(command -v ruby${RUBY_VERSION})"
+paxctl -cvm "$(command -v ruby${RUBY_VERSION})"
 # https://en.wikibooks.org/wiki/Grsecurity/Application-specific_Settings#Node.js
-paxctl -Cm "$(command -v nodejs)"
+paxctl -cvm "$(command -v nodejs)"
 
 # remove the host keys generated during openssh-server installation
 rm -rf /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
@@ -73,8 +73,9 @@ GITLAB_PAGES_VERSION=${GITLAB_PAGES_VERSION:-$(cat ${GITLAB_INSTALL_DIR}/GITLAB_
 
 # download golang
 echo "Downloading Go ${GOLANG_VERSION}..."
-wget -cnv https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz -P ${GITLAB_BUILD_DIR}/
-tar -xf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-amd64.tar.gz -C /tmp/
+dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"
+wget -cnv https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-${dpkgArch}.tar.gz -P ${GITLAB_BUILD_DIR}/
+tar -xf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-${dpkgArch}.tar.gz -C /tmp/
 
 # install gitlab-shell
 echo "Downloading gitlab-shell v.${GITLAB_SHELL_VERSION}..."
@@ -131,7 +132,7 @@ chown -R ${GITLAB_USER}: ${GITLAB_GITALY_INSTALL_DIR}
 rm -rf ${GITLAB_GITALY_BUILD_DIR}
 
 # remove go
-rm -rf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-amd64.tar.gz ${GOROOT}
+rm -rf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-${dpkgArch}.tar.gz ${GOROOT}
 
 # Fix for rebase in forks 
 echo "Linking $(command -v gitaly-ssh) to /"

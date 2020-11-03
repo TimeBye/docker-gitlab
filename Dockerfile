@@ -1,4 +1,4 @@
-FROM ubuntu:xenial-20181218
+FROM ubuntu:bionic-20200921
 
 ARG BUILD_DATE
 ARG VCS_REF
@@ -27,31 +27,46 @@ ENV GITLAB_INSTALL_DIR="${GITLAB_HOME}/gitlab" \
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      wget ca-certificates apt-transport-https \
- && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E1DD270288B4E6030699E45FA1715D88E1DF1F24 \
- && echo "deb http://ppa.launchpad.net/git-core/ppa/ubuntu xenial main" >> /etc/apt/sources.list \
+      wget ca-certificates apt-transport-https gnupg2
+RUN set -ex && \
+ apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E1DD270288B4E6030699E45FA1715D88E1DF1F24 \
+ && echo "deb http://ppa.launchpad.net/git-core/ppa/ubuntu bionic main" >> /etc/apt/sources.list \
  && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 80F70E11F0F0D5F10CB20E62F5DA5F09C3173AA6 \
- && echo "deb http://ppa.launchpad.net/brightbox/ruby-ng/ubuntu xenial main" >> /etc/apt/sources.list \
+ && echo "deb http://ppa.launchpad.net/brightbox/ruby-ng/ubuntu bionic main" >> /etc/apt/sources.list \
  && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8B3981E7A6852F782CC4951600A6F0A3C300EE8C \
- && echo "deb http://ppa.launchpad.net/nginx/stable/ubuntu xenial main" >> /etc/apt/sources.list \
+ && echo "deb http://ppa.launchpad.net/nginx/stable/ubuntu bionic main" >> /etc/apt/sources.list \
  && wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
- && echo 'deb http://apt.postgresql.org/pub/repos/apt/ xenial-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+ && echo 'deb http://apt.postgresql.org/pub/repos/apt/ bionic-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
  && wget --quiet -O - https://deb.nodesource.com/gpgkey/nodesource.gpg.key | apt-key add - \
- && echo 'deb https://deb.nodesource.com/node_8.x xenial main' > /etc/apt/sources.list.d/nodesource.list \
+ && echo 'deb https://deb.nodesource.com/node_8.x bionic main' > /etc/apt/sources.list.d/nodesource.list \
  && wget --quiet -O - https://dl.yarnpkg.com/debian/pubkey.gpg  | apt-key add - \
  && echo 'deb https://dl.yarnpkg.com/debian/ stable main' > /etc/apt/sources.list.d/yarn.list \
+ && set -ex \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
       sudo supervisor logrotate locales curl \
-      nginx openssh-server mysql-client postgresql-client redis-tools \
-      git-core gnupg2 ruby${RUBY_VERSION} python2.7 python-docutils nodejs yarn gettext-base \
-      libmysqlclient20 libpq5 zlib1g libyaml-0-2 libssl1.0.0 \
-      libgdbm3 libreadline6 libncurses5 libffi6 \
-      libxml2 libxslt1.1 libcurl3 libicu55 libre2-dev tzdata unzip \
+      nginx openssh-server mysql-client postgresql-client-12 postgresql-contrib-12 redis-tools \
+      git-core ruby${RUBY_VERSION} python3 python3-docutils nodejs yarn gettext-base graphicsmagick \
+      libpq5 zlib1g libyaml-0-2 libssl1.0.0 \
+      libgdbm5 libreadline7 libncurses5 libffi6 \
+      libxml2 libxslt1.1 libcurl4 libicu60 libre2-dev tzdata unzip libimage-exiftool-perl \
  && update-locale LANG=C.UTF-8 LC_MESSAGES=POSIX \
  && locale-gen en_US.UTF-8 \
- && DEBIAN_FRONTEND=noninteractive dpkg-reconfigure locales \
- && gem install --no-document bundler -v 1.17.3 \
+ && DEBIAN_FRONTEND=noninteractive dpkg-reconfigure locales; \
+    dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"; \
+	case "${dpkgArch}" in \
+		arm64) \
+            update-alternatives --install /usr/bin/erb  erb  /usr/bin/erb${RUBY_VERSION}  1; \
+            update-alternatives --install /usr/bin/gem  gem  /usr/bin/gem${RUBY_VERSION}  1; \
+            update-alternatives --install /usr/bin/irb  irb  /usr/bin/irb${RUBY_VERSION}  1; \
+            update-alternatives --install /usr/bin/rdoc rdoc /usr/bin/rdoc${RUBY_VERSION} 1; \
+            update-alternatives --install /usr/bin/ri   ri   /usr/bin/ri${RUBY_VERSION}   1; \
+            update-alternatives --install /usr/bin/ruby ruby /usr/bin/ruby${RUBY_VERSION} 1; \
+            ;; \
+	esac; \
+#  && gem sources --add https://mirrors.tuna.tsinghua.edu.cn/rubygems/ --remove https://rubygems.org/ \
+#  && gem sources -l \
+    gem install --no-document bundler -v 1.17.3 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY assets/build/ ${GITLAB_BUILD_DIR}/
