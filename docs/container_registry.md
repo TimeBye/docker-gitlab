@@ -284,7 +284,11 @@ docker stop registry gitlab && docker rm registry gitlab
 Execute the rake task with a removeable container.
 ```bash
 docker run --name gitlab -it --rm [OPTIONS] \
+<<<<<<< HEAD
     sameersbn/gitlab:11.11.3 app:rake gitlab:backup:create
+=======
+    sameersbn/gitlab:11.6.11 app:rake gitlab:backup:create
+>>>>>>> f86b47b... [IMP]添加 oauth2 及  auth 支持，添加 arm 支持
 ```
 ## Restoring Backups
 
@@ -300,7 +304,11 @@ Execute the rake task to restore a backup. Make sure you run the container in in
 
 ```bash
 docker run --name gitlab -it --rm [OPTIONS] \
+<<<<<<< HEAD
     sameersbn/gitlab:11.11.3 app:rake gitlab:backup:restore
+=======
+    sameersbn/gitlab:11.6.11 app:rake gitlab:backup:restore
+>>>>>>> f86b47b... [IMP]添加 oauth2 及  auth 支持，添加 arm 支持
 ```
 
 The list of all available backups will be displayed in reverse chronological order. Select the backup you want to restore and continue.
@@ -309,7 +317,11 @@ To avoid user interaction in the restore operation, specify the timestamp of the
 
 ```bash
 docker run --name gitlab -it --rm [OPTIONS] \
+<<<<<<< HEAD
     sameersbn/gitlab:11.11.3 app:rake gitlab:backup:restore BACKUP=1417624827
+=======
+    sameersbn/gitlab:11.6.11 app:rake gitlab:backup:restore BACKUP=1417624827
+>>>>>>> f86b47b... [IMP]添加 oauth2 及  auth 支持，添加 arm 支持
 ```
 
 # Upgrading from an existing GitLab installation
@@ -320,7 +332,11 @@ If you want enable this feature for an existing instance of GitLab you need to d
 - **Step 1**: Update the docker image.
 
 ```bash
+<<<<<<< HEAD
 docker pull sameersbn/gitlab:11.11.3
+=======
+docker pull sameersbn/gitlab:11.6.11
+>>>>>>> f86b47b... [IMP]添加 oauth2 及  auth 支持，添加 arm 支持
 ```
 
 - **Step 2**: Stop and remove the currently running image
@@ -373,7 +389,11 @@ docker run --name gitlab -d [PREVIOUS_OPTIONS] \
 --env 'GITLAB_REGISTRY_CERT_PATH=/certs/registry-auth.crt' \
 --env 'GITLAB_REGISTRY_KEY_PATH=/certs/registry-auth.key' \
 --link registry:registry
+<<<<<<< HEAD
 sameersbn/gitlab:11.11.3
+=======
+sameersbn/gitlab:11.6.11
+>>>>>>> f86b47b... [IMP]添加 oauth2 及  auth 支持，添加 arm 支持
 ```
 
 

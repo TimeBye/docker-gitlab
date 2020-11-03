@@ -90,6 +90,9 @@ https://gitlab.com/gitlab-org/gitlab-ce/blob/master/CHANGELOG.md) for the list o
 **11.7.0**
 - gitlab: upgrade CE to v11.7.0
 
+**11.6.11**
+- gitlab: upgrade CE to v11.6.11
+
 **11.6.5**
 - gitlab: upgrade CE to v11.6.5
 
