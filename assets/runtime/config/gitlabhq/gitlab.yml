@@ -937,7 +937,7 @@ production: &base
                   login_url: '{{OAUTH_CAS3_LOGIN_URL}}',
                   service_validate_url: '{{OAUTH_CAS3_VALIDATE_URL}}',
                   logout_url: '{{OAUTH_CAS3_LOGOUT_URL}}'} }
-       - { name: 'authentiq',
+      - { name: 'authentiq',
           app_id: '{{OAUTH_AUTHENTIQ_CLIENT_ID}}',
           app_secret: 'OAUTH_AUTHENTIQ_CLIENT_SECRET',
           args: { scope: {{OAUTH_AUTHENTIQ_SCOPE}}, redirect_uri: '{{OAUTH_AUTHENTIQ_REDIRECT_URI}}' } }
@@ -999,27 +999,33 @@ production: &base
             domain: '{{OAUTH_AUTH0_DOMAIN}}',
             scope: '{{OAUTH_AUTH0_SCOPE}}'  } }
       - { name: 'oauth2_generic',
-          app_id: '{{OAUTH2_GENERIC_APP_ID}}',
-          app_secret: '{{OAUTH2_GENERIC_APP_SECRET}}',
+          app_id: '{{OAUTH_GENERIC_API_KEY}}',
+          app_secret: '{{OAUTH_GENERIC_APP_SECRET}}',
           args: {
+            redirect_url: '{{OAUTH_GENERIC_REDIRECT_URL}}',
+            strategy_class: "{{OAUTH_GENERIC_STRATEGY_CLASS}}",
             client_options: {
-              site: '{{OAUTH2_GENERIC_CLIENT_SITE}}',
-              user_info_url: '{{OAUTH2_GENERIC_CLIENT_USER_INFO_URL}}',
-              authorize_url: '{{OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL}}',
-              token_url: '{{OAUTH2_GENERIC_CLIENT_TOKEN_URL}}',
-              end_session_endpoint: '{{OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT}}',
-                        },
+              site: '{{OAUTH_GENERIC_SITE}}',
+              user_info_url: '{{OAUTH_GENERIC_USER_INFO_URL}}',
+              authorize_url: '{{OAUTH_GENERIC_AUTHORIZE_URL}}',
+              token_url: '{{OAUTH_GENERIC_TOKEN_URL}}'},
             user_response_structure: {
-            id_path: '{{OAUTH2_GENERIC_ID_PATH}}',
-            attributes: {
-              uid: '{{OAUTH2_GENERIC_USER_UID}}',
-              name: '{{OAUTH2_GENERIC_USER_NAME}}',
-              email: '{{OAUTH2_GENERIC_USER_EMAIL}}'
-              }
-            },
-            authorize_params: { scope: "{{OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE}}" },
-            label: '{{OAUTH2_GENERIC_LABEL}}',
-            name: '{{OAUTH2_GENERIC_NAME}}' }}
+              root_path: [{{OAUTH_GENERIC_ROOT_PATH}}],
+              id_path: [{{OAUTH_GENERIC_ID_PATH}}],
+              attributes: {
+                  name: '{{OAUTH_GENERIC_USER_NAME}}',
+                  email: '{{OAUTH_GENERIC_USER_EMAIL}}',
+                  nickname: '{{OAUTH_GENERIC_USER_NICKNAME}}',
+                  first_name: '{{OAUTH_GENERIC_USER_FIRST_NAME}}',
+                  last_name: '{{OAUTH_GENERIC_USER_LAST_NAME}}',
+                  location: '{{OAUTH_GENERIC_USER_LOCATION}}',
+                  descriptioin: '{{OAUTH_GENERIC_USER_DESCRIPTIOIN}}',
+                  image: '{{OAUTH_GENERIC_USER_IMAGE}}',
+                  phone: '{{OAUTH_GENERIC_USER_PHONE}}',
+                  urls: '{{OAUTH_GENERIC_USER_URLS}}'
+                },
+              },
+            name: '{{OAUTH_GENERIC_APP_NAME}}' } }
       - { name: 'azure_oauth2',
           args: {
             client_id: '{{OAUTH_AZURE_API_KEY}}',
@@ -1243,6 +1249,21 @@ production: &base
       #
       # Ban an IP for one hour (3600s) after too many auth attempts
       bantime: {{RACK_ATTACK_BANTIME}}
+
+  gitlab_kas:
+      enabled: {{GITLAB_KAS_ENABLED}}
+      # File that contains the secret key for verifying access for gitlab-kas.
+      # Default is '.gitlab_kas_secret' relative to Rails.root (i.e. root of the GitLab app).
+      secret_file: {{GITLAB_KAS_SECRET}} # /home/git/gitlab/.gitlab_kas_secret
+
+      # The URL to the external KAS API (used by the Kubernetes agents)
+      external_url: {{GITLAB_KAS_EXTERNAL}} # wss://kas.example.com
+  
+      # The URL to the internal KAS API (used by the GitLab backend)
+      internal_url: {{GITLAB_KAS_INTERNAL}} # grpc://127.0.0.1:8153
+  
+      # The URL to the Kubernetes API proxy (used by GitLab users)
+      external_k8s_proxy_url: {{GITLAB_KAS_PROXY}} # https://127.0.0.1:8154 # default: nil
 
 development:
   <<: *base
