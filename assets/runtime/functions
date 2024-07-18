@@ -294,7 +294,12 @@ gitlab_finalize_redis_parameters() {
 
 gitlab_check_redis_connection() {
   timeout=60
-  while ! redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} -n ${REDIS_DB_NUMBER} ping >/dev/null 2>&1
+  if [[ -z ${REDIS_PASSWORD} ]]; then
+    prog="redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} -n ${REDIS_DB_NUMBER} ping"
+  else
+    prog="redis-cli -h ${REDIS_HOST} -a ${REDIS_PASSWORD} -p ${REDIS_PORT} -n ${REDIS_DB_NUMBER} ping"
+  fi
+  while ! ${prog} >/dev/null 2>&1
   do
     timeout=$(expr $timeout - 1)
     if [[ $timeout -eq 0 ]]; then
@@ -314,9 +319,14 @@ gitlab_configure_redis() {
   gitlab_finalize_redis_parameters
   gitlab_check_redis_connection
 
+  if [[ -n ${REDIS_PASSWORD} ]]; then
+    REDIS_PASSWORD=":${REDIS_PASSWORD}@"
+  fi
+
   update_template ${GITLAB_RESQUE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_PASSWORD \
     REDIS_DB_NUMBER
 }
 
@@ -324,11 +334,12 @@ gitlab_configure_actioncable() {
   echo -n "Configuring gitlab::actioncable"
 
   gitlab_finalize_redis_parameters
-  gitlab_check_redis_connection
+  # gitlab_check_redis_connection
 
   update_template ${GITLAB_ACTIONCABLE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_PASSWORD \
     REDIS_DB_NUMBER
 }
 
@@ -706,27 +717,39 @@ gitlab_configure_oauth_saml() {
 }
 
 gitlab_configure_oauth2_generic() {
-  if [[ -n ${OAUTH2_GENERIC_APP_ID} && \
-        -n ${OAUTH2_GENERIC_APP_SECRET} ]]; then
+  if [[ -n ${OAUTH_GENERIC_API_KEY} && \
+        -n ${OAUTH_GENERIC_APP_SECRET} && \
+        -n ${OAUTH_GENERIC_SITE} && \
+        -n ${OAUTH_GENERIC_USER_INFO_URL} && \
+        -n ${OAUTH_GENERIC_AUTHORIZE_URL} && \
+        -n ${OAUTH_GENERIC_TOKEN_URL} && \
+        -n ${OAUTH_GENERIC_REDIRECT_URL} ]]; then
     echo "Configuring gitlab::oauth::generic..."
     OAUTH_ENABLED=${OAUTH_ENABLED:-true}
     update_template ${GITLAB_CONFIG} \
-    OAUTH2_GENERIC_APP_ID \
-    OAUTH2_GENERIC_APP_SECRET \
-    OAUTH2_GENERIC_CLIENT_SITE \
-    OAUTH2_GENERIC_CLIENT_USER_INFO_URL \
-    OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL \
-    OAUTH2_GENERIC_CLIENT_TOKEN_URL \
-    OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT \
-    OAUTH2_GENERIC_ID_PATH \
-    OAUTH2_GENERIC_USER_UID \
-    OAUTH2_GENERIC_USER_NAME \
-    OAUTH2_GENERIC_USER_EMAIL \
-    OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE \
-    OAUTH2_GENERIC_LABEL \
-    OAUTH2_GENERIC_NAME
+      OAUTH_GENERIC_API_KEY \
+      OAUTH_GENERIC_APP_SECRET \
+      OAUTH_GENERIC_REDIRECT_URL \
+      OAUTH_GENERIC_STRATEGY_CLASS \
+      OAUTH_GENERIC_SITE \
+      OAUTH_GENERIC_USER_INFO_URL \
+      OAUTH_GENERIC_AUTHORIZE_URL \
+      OAUTH_GENERIC_TOKEN_URL \
+      OAUTH_GENERIC_ROOT_PATH \
+      OAUTH_GENERIC_ID_PATH \
+      OAUTH_GENERIC_USER_NAME \
+      OAUTH_GENERIC_USER_EMAIL \
+      OAUTH_GENERIC_USER_NICKNAME \
+      OAUTH_GENERIC_USER_FIRST_NAME \
+      OAUTH_GENERIC_USER_LAST_NAME \
+      OAUTH_GENERIC_USER_LOCATION \
+      OAUTH_GENERIC_USER_DESCRIPTIOIN \
+      OAUTH_GENERIC_USER_IMAGE \
+      OAUTH_GENERIC_USER_PHONE \
+      OAUTH_GENERIC_USER_URLS \
+      OAUTH_GENERIC_APP_NAME
   else
-      exec_as_git sed -i "/name: 'oauth2_generic'/,/{{OAUTH2_GENERIC_NAME}}/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/name: 'oauth2_generic'/,/{{OAUTH_GENERIC_APP_NAME}}/d" ${GITLAB_CONFIG}
   fi
 }
 
@@ -823,7 +846,7 @@ gitlab_configure_oauth() {
     OAUTH_ALLOW_BYPASS_TWO_FACTOR
 
   case ${OAUTH_AUTO_SIGN_IN_WITH_PROVIDER} in
-    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|$OAUTH2_GENERIC_NAME)
+    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|$OAUTH_GENERIC_APP_NAME)
       update_template ${GITLAB_CONFIG} OAUTH_AUTO_SIGN_IN_WITH_PROVIDER
       ;;
     *)
@@ -2072,6 +2095,7 @@ configure_gitlab_shell() {
     SSL_SELF_SIGNED \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_PASSWORD \
     REDIS_DB_NUMBER
 
   # update custom_hooks_dir if set $GITLAB_SHELL_CUSTOM_HOOKS_DIR
