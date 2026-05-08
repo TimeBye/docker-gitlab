@@ -1002,6 +1002,8 @@ production: &base
           app_id: '{{OAUTH2_GENERIC_APP_ID}}',
           app_secret: '{{OAUTH2_GENERIC_APP_SECRET}}',
           args: {
+            redirect_url: '{{OAUTH2_GENERIC_REDIRECT_URL}}',
+            strategy_class: "{{OAUTH2_GENERIC_STRATEGY_CLASS}}",
             client_options: {
               site: '{{OAUTH2_GENERIC_CLIENT_SITE}}',
               user_info_url: '{{OAUTH2_GENERIC_CLIENT_USER_INFO_URL}}',
@@ -1010,11 +1012,20 @@ production: &base
               end_session_endpoint: '{{OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT}}',
                         },
             user_response_structure: {
-            id_path: '{{OAUTH2_GENERIC_ID_PATH}}',
-            attributes: {
-              uid: '{{OAUTH2_GENERIC_USER_UID}}',
-              name: '{{OAUTH2_GENERIC_USER_NAME}}',
-              email: '{{OAUTH2_GENERIC_USER_EMAIL}}'
+              root_path: [{{OAUTH2_GENERIC_ROOT_PATH}}],
+              id_path: [{{OAUTH2_GENERIC_ID_PATH}}],
+              attributes: {
+                uid: '{{OAUTH2_GENERIC_USER_UID}}',
+                name: '{{OAUTH2_GENERIC_USER_NAME}}',
+                nickname: '{{OAUTH2_GENERIC_USER_NICKNAME}}',
+                first_name: '{{OAUTH2_GENERIC_USER_FIRST_NAME}}',
+                last_name: '{{OAUTH2_GENERIC_USER_LAST_NAME}}',
+                location: '{{OAUTH2_GENERIC_USER_LOCATION}}',
+                descriptioin: '{{OAUTH2_GENERIC_USER_DESCRIPTION}}',
+                image: '{{OAUTH2_GENERIC_USER_IMAGE}}',
+                phone: '{{OAUTH2_GENERIC_USER_PHONE}}',
+                urls: '{{OAUTH2_GENERIC_USER_URLS}}',
+                email: '{{OAUTH2_GENERIC_USER_EMAIL}}'
               }
             },
             authorize_params: { scope: "{{OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE}}" },
