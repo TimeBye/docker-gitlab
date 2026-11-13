@@ -34,6 +34,7 @@ case ${1} in
         fi
         rm -rf /var/run/supervisor.sock
         configure_gitlab_requires_db
+        fix_gitlab_shell_permissions
         exec /usr/bin/supervisord -nc /etc/supervisor/supervisord.conf
         ;;
       app:init)

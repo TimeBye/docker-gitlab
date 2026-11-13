@@ -2446,6 +2446,8 @@ Tenant ID for oauth provider `azure_activedirectory_v2`. If not set, correspondi
 
 Optional label for login button for `azure_activedirectory_v2`. Defaults to `Azure AD v2`
 
+Variables in this section use the `OAUTH2_GENERIC_*` prefix. The former `OAUTH_GENERIC_*` names are deprecated but still honored when the corresponding `OAUTH2_GENERIC_*` variable is not set: `OAUTH_GENERIC_API_KEY` maps to `OAUTH2_GENERIC_APP_ID`, `OAUTH_GENERIC_SITE` to `OAUTH2_GENERIC_CLIENT_SITE`, `OAUTH_GENERIC_*_URL` to `OAUTH2_GENERIC_CLIENT_*_URL`, and `OAUTH_GENERIC_APP_NAME` to `OAUTH2_GENERIC_NAME`. The remaining names only add the `2` (`OAUTH_GENERIC_*` to `OAUTH2_GENERIC_*`).
+
 ##### `OAUTH2_GENERIC_APP_ID`
 
 Your OAuth2 App ID. No defaults.

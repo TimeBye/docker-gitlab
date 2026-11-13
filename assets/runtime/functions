@@ -51,6 +51,28 @@ exec_as_git() {
   fi
 }
 
+## Percent-encode a string so that it can be safely embedded in a URL (RFC 3986)
+# $1: string to encode
+urlencode() {
+  local string=${1}
+  local encoded=""
+  local char hex i
+  local LC_ALL=C
+  for ((i = 0; i < ${#string}; i++)); do
+    char=${string:i:1}
+    case ${char} in
+      [a-zA-Z0-9.~_-])
+        encoded+=${char}
+        ;;
+      *)
+        printf -v hex '%%%02X' "'${char}"
+        encoded+=${hex}
+        ;;
+    esac
+  done
+  printf '%s' "${encoded}"
+}
+
 ## Copies configuration template to the destination as the specified USER
 ### Looks up for overrides in ${USERCONF_TEMPLATES_DIR} before using the defaults from ${SYSCONF_TEMPLATES_DIR}
 # $1: copy-as user
@@ -217,6 +239,9 @@ gitlab_generate_postgresqlrc() {
   # generate ~/.postgresqlrc to switch client version
   GITLAB_USER_POSTGRESQLRC="/home/${GITLAB_USER}/.postgresqlrc"
   echo "- Generating ${GITLAB_USER_POSTGRESQLRC}"
+  if [[ ! -e "${GITLAB_USER_POSTGRESQLRC}" ]]; then
+    install -o "${GITLAB_USER}" -m 0600 /dev/null "${GITLAB_USER_POSTGRESQLRC}"
+  fi
   echo "${DB_CLIENT_VERSION_PACKAGE_NAME} ${DB_HOST}:${DB_PORT} ${DB_NAME}" | exec_as_git tee "${GITLAB_USER_POSTGRESQLRC}"
 }
 
@@ -294,7 +319,12 @@ gitlab_finalize_redis_parameters() {
 
 gitlab_check_redis_connection() {
   timeout=60
-  while ! redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} -n ${REDIS_DB_NUMBER} ping >/dev/null 2>&1
+  local auth_args=()
+  [[ -n ${REDIS_USER} ]]     && auth_args+=(--user "${REDIS_USER}")
+  [[ -n ${REDIS_PASSWORD} ]] && auth_args+=(-a "${REDIS_PASSWORD}")
+
+  local cmd=(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" "${auth_args[@]}" -n "${REDIS_DB_NUMBER}" ping)
+  while ! "${cmd[@]}" >/dev/null 2>&1
   do
     timeout=$(expr $timeout - 1)
     if [[ $timeout -eq 0 ]]; then
@@ -305,6 +335,11 @@ gitlab_check_redis_connection() {
     echo -n "."
     sleep 1
   done
+
+  # Build URI userinfo: "user:pass@" for ACL, ":pass@" for legacy, empty for no auth
+  if [[ -n ${REDIS_USER} || -n ${REDIS_PASSWORD} ]]; then
+    export REDIS_USERINFO="$(urlencode "${REDIS_USER}"):$(urlencode "${REDIS_PASSWORD}")@"
+  fi
   echo
 }
 
@@ -317,6 +352,7 @@ gitlab_configure_redis() {
   update_template ${GITLAB_RESQUE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_USERINFO \
     REDIS_DB_NUMBER
 }
 
@@ -329,6 +365,7 @@ gitlab_configure_actioncable() {
   update_template ${GITLAB_ACTIONCABLE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_USERINFO \
     REDIS_DB_NUMBER
 }
 
@@ -729,24 +766,40 @@ gitlab_configure_oauth_saml() {
 
 gitlab_configure_oauth2_generic() {
   if [[ -n ${OAUTH2_GENERIC_APP_ID} && \
-        -n ${OAUTH2_GENERIC_APP_SECRET} ]]; then
+        -n ${OAUTH2_GENERIC_APP_SECRET} && \
+        -n ${OAUTH2_GENERIC_CLIENT_SITE} && \
+        -n ${OAUTH2_GENERIC_CLIENT_USER_INFO_URL} && \
+        -n ${OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL} && \
+        -n ${OAUTH2_GENERIC_CLIENT_TOKEN_URL} && \
+        -n ${OAUTH2_GENERIC_REDIRECT_URL} ]]; then
     echo "Configuring gitlab::oauth::generic..."
     OAUTH_ENABLED=${OAUTH_ENABLED:-true}
     update_template ${GITLAB_CONFIG} \
-    OAUTH2_GENERIC_APP_ID \
-    OAUTH2_GENERIC_APP_SECRET \
-    OAUTH2_GENERIC_CLIENT_SITE \
-    OAUTH2_GENERIC_CLIENT_USER_INFO_URL \
-    OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL \
-    OAUTH2_GENERIC_CLIENT_TOKEN_URL \
-    OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT \
-    OAUTH2_GENERIC_ID_PATH \
-    OAUTH2_GENERIC_USER_UID \
-    OAUTH2_GENERIC_USER_NAME \
-    OAUTH2_GENERIC_USER_EMAIL \
-    OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE \
-    OAUTH2_GENERIC_LABEL \
-    OAUTH2_GENERIC_NAME
+      OAUTH2_GENERIC_APP_ID \
+      OAUTH2_GENERIC_APP_SECRET \
+      OAUTH2_GENERIC_CLIENT_SITE \
+      OAUTH2_GENERIC_CLIENT_USER_INFO_URL \
+      OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL \
+      OAUTH2_GENERIC_CLIENT_TOKEN_URL \
+      OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT \
+      OAUTH2_GENERIC_ID_PATH \
+      OAUTH2_GENERIC_USER_UID \
+      OAUTH2_GENERIC_USER_NAME \
+      OAUTH2_GENERIC_USER_EMAIL \
+      OAUTH2_GENERIC_USER_NICKNAME \
+      OAUTH2_GENERIC_USER_FIRST_NAME \
+      OAUTH2_GENERIC_USER_LAST_NAME \
+      OAUTH2_GENERIC_USER_LOCATION \
+      OAUTH2_GENERIC_USER_DESCRIPTION \
+      OAUTH2_GENERIC_USER_IMAGE \
+      OAUTH2_GENERIC_USER_PHONE \
+      OAUTH2_GENERIC_USER_URLS \
+      OAUTH2_GENERIC_REDIRECT_URL \
+      OAUTH2_GENERIC_STRATEGY_CLASS \
+      OAUTH2_GENERIC_ROOT_PATH \
+      OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE \
+      OAUTH2_GENERIC_LABEL \
+      OAUTH2_GENERIC_NAME
   else
       exec_as_git sed -i "/name: 'oauth2_generic'/,/{{OAUTH2_GENERIC_NAME}}/d" ${GITLAB_CONFIG}
   fi
@@ -891,7 +944,7 @@ gitlab_configure_oauth() {
     OAUTH_ALLOW_BYPASS_TWO_FACTOR
 
   case ${OAUTH_AUTO_SIGN_IN_WITH_PROVIDER} in
-    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|$OAUTH2_GENERIC_NAME|oidc|jwt)
+    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|${OAUTH2_GENERIC_NAME}|oidc|jwt)
       update_template ${GITLAB_CONFIG} OAUTH_AUTO_SIGN_IN_WITH_PROVIDER
       ;;
     *)
@@ -1234,6 +1287,51 @@ gitlab_configure_artifacts() {
     GITLAB_ARTIFACTS_DIR
 }
 
+
+gitlab_configure_external_diffs() {
+  echo -n "Configuring gitlab::external_diffs"
+
+  update_template ${GITLAB_CONFIG} \
+    GITLAB_EXTERNAL_DIFFS_ENABLED \
+    GITLAB_EXTERNAL_DIFFS_WHEN \
+    GITLAB_EXTERNAL_DIFFS_STORAGE_PATH \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_ENABLED
+
+  if [[ ${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_ENABLED} == true ]]; then
+    echo ":object_store"
+
+    if [[ "${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER}" == "Google" ]]; then
+      echo " -> Google EXTERNAL_DIFFS provider selected removing aws config"
+      exec_as_git sed -i "/#start-external-diffs-aws/,/#end-external-diffs-aws/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#start-external-diffs-gcs/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#end-external-diffs-gcs/d" ${GITLAB_CONFIG}
+    fi
+    if [[ "${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER}" == "AWS" ]]; then
+      echo " -> AWS EXTERNAL_DIFFS provider selected removing Google config"
+      exec_as_git sed -i "/#start-external-diffs-gcs/,/#end-external-diffs-gcs/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#start-external-diffs-aws/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#end-external-diffs-aws/d" ${GITLAB_CONFIG}
+    fi
+
+    update_template ${GITLAB_CONFIG} \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_REMOTE_DIRECTORY \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_BACKGROUND_UPLOAD \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_PROXY_DOWNLOAD \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ACCESS_KEY_ID \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SECRET_ACCESS_KEY \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_REGION \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_HOST \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ENDPOINT \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_PATH_STYLE \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SIGNATURE_VERSION \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_PROJECT \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_CLIENT_EMAIL \
+      GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_JSON_KEY_LOCATION
+  fi
+
+  echo
+}
 
 gitlab_configure_packages() {
   update_template ${GITLAB_CONFIG} \
@@ -2052,6 +2150,7 @@ configure_gitlab() {
   gitlab_configure_rack_attack
   gitlab_configure_ci
   gitlab_configure_artifacts
+  gitlab_configure_external_diffs
   gitlab_configure_packages
   gitlab_configure_terraform_state
   gitlab_configure_lfs
@@ -2129,6 +2228,17 @@ configure_gitlab_requires_db() {
   gitlab_configure_feature_flags
 }
 
+fix_gitlab_shell_permissions() {
+  echo "Fixing gitlab-shell AuthorizedKeysCommand permissions..."
+  local authorized_keys_command="${GITLAB_SHELL_INSTALL_DIR}/bin/gitlab-shell-authorized-keys-check"
+
+  # OpenSSH requires root ownership and no group/other write access along this path.
+  chown root:root "${GITLAB_HOME}" "${GITLAB_SHELL_INSTALL_DIR}" \
+    "${GITLAB_SHELL_INSTALL_DIR}/bin" "${authorized_keys_command}"
+  chmod 755 "${GITLAB_HOME}" "${GITLAB_SHELL_INSTALL_DIR}" \
+    "${GITLAB_SHELL_INSTALL_DIR}/bin" "${authorized_keys_command}"
+}
+
 configure_gitlab_shell() {
   echo "Configuring gitlab-shell..."
   update_template ${GITLAB_SHELL_CONFIG} \
@@ -2136,16 +2246,15 @@ configure_gitlab_shell() {
     GITLAB_HOME \
     GITLAB_LOG_DIR \
     GITLAB_SHELL_INSTALL_DIR \
-    SSL_SELF_SIGNED \
-    REDIS_HOST \
-    REDIS_PORT \
-    REDIS_DB_NUMBER
+    SSL_SELF_SIGNED
 
   # update custom_hooks_dir if set $GITLAB_SHELL_CUSTOM_HOOKS_DIR
   if [[ -n ${GITLAB_SHELL_CUSTOM_HOOKS_DIR} ]]; then
-    exec_as_git sed -i \
+    sed -i \
       "s|custom_hooks_dir:.*|custom_hooks_dir: $GITLAB_SHELL_CUSTOM_HOOKS_DIR|g" \
-      ${GITLAB_SHELL_CONFIG}
+      "${GITLAB_SHELL_CONFIG}"
+    chown "${GITLAB_USER}:" "${GITLAB_SHELL_CONFIG}"
+    chmod 0640 "${GITLAB_SHELL_CONFIG}"
   fi
 }
 
