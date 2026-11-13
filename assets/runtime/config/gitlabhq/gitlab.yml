@@ -261,19 +261,36 @@ production: &base
   external_diffs:
     # If disabled (the default), the diffs are in-database. Otherwise, they can
     # be stored on disk, or in object storage
-    enabled: false
-    # The location where external diffs are stored (default: shared/lfs-external-diffs).
-    # storage_path: shared/external-diffs
-    # object_store:
-    #   enabled: false
-    #   remote_directory: external-diffs
-    #   background_upload: false
-    #   proxy_download: false
-    #   connection:
-    #     provider: AWS
-    #     aws_access_key_id: AWS_ACCESS_KEY_ID
-    #     aws_secret_access_key: AWS_SECRET_ACCESS_KEY
-    #     region: us-east-1
+    enabled: {{GITLAB_EXTERNAL_DIFFS_ENABLED}}
+    # When to move diffs to external storage:
+    #   always  - all new diffs go directly to external storage (default)
+    #   outdated - diffs stay in DB initially, moved to external storage when
+    #              the MR gets a newer diff version, or the MR was merged/closed
+    #              more than 7 days ago
+    when: {{GITLAB_EXTERNAL_DIFFS_WHEN}}
+    # The location where external diffs are stored (default: shared/external-diffs).
+    storage_path: {{GITLAB_EXTERNAL_DIFFS_STORAGE_PATH}}
+    object_store:
+      enabled: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_ENABLED}}
+      remote_directory: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_REMOTE_DIRECTORY}} # Bucket name
+      background_upload: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_BACKGROUND_UPLOAD}} # Temporary option to limit automatic upload (Default: false)
+      proxy_download: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_PROXY_DOWNLOAD}} # Passthrough all downloads via GitLab instead of using Redirects to Object Storage
+      connection:
+        provider: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER}}
+        #start-external-diffs-aws
+        aws_access_key_id: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ACCESS_KEY_ID}}
+        aws_secret_access_key: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SECRET_ACCESS_KEY}}
+        aws_signature_version: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SIGNATURE_VERSION}} # For creation of signed URLs. Set to 2 if provider does not support v4.
+        region: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_REGION}}
+        host: '{{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_HOST}}' # default: s3.amazonaws.com
+        endpoint: '{{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ENDPOINT}}' # default: nil
+        path_style: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_PATH_STYLE}} # Use 'host/bucket_name/object' instead of 'bucket_name.host/object'
+        #end-external-diffs-aws
+        #start-external-diffs-gcs
+        google_project: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_PROJECT}}
+        google_client_email: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_CLIENT_EMAIL}}
+        google_json_key_location: {{GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_JSON_KEY_LOCATION}}
+        #end-external-diffs-gcs
 
   ## Git LFS
   lfs:
@@ -1047,6 +1064,8 @@ production: &base
           app_id: '{{OAUTH2_GENERIC_APP_ID}}',
           app_secret: '{{OAUTH2_GENERIC_APP_SECRET}}',
           args: {
+            redirect_url: '{{OAUTH2_GENERIC_REDIRECT_URL}}',
+            strategy_class: "{{OAUTH2_GENERIC_STRATEGY_CLASS}}",
             client_options: {
               site: '{{OAUTH2_GENERIC_CLIENT_SITE}}',
               user_info_url: '{{OAUTH2_GENERIC_CLIENT_USER_INFO_URL}}',
@@ -1055,11 +1074,20 @@ production: &base
               end_session_endpoint: '{{OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT}}',
                         },
             user_response_structure: {
-            id_path: '{{OAUTH2_GENERIC_ID_PATH}}',
-            attributes: {
-              uid: '{{OAUTH2_GENERIC_USER_UID}}',
-              name: '{{OAUTH2_GENERIC_USER_NAME}}',
-              email: '{{OAUTH2_GENERIC_USER_EMAIL}}'
+              root_path: [{{OAUTH2_GENERIC_ROOT_PATH}}],
+              id_path: [{{OAUTH2_GENERIC_ID_PATH}}],
+              attributes: {
+                uid: '{{OAUTH2_GENERIC_USER_UID}}',
+                name: '{{OAUTH2_GENERIC_USER_NAME}}',
+                nickname: '{{OAUTH2_GENERIC_USER_NICKNAME}}',
+                first_name: '{{OAUTH2_GENERIC_USER_FIRST_NAME}}',
+                last_name: '{{OAUTH2_GENERIC_USER_LAST_NAME}}',
+                location: '{{OAUTH2_GENERIC_USER_LOCATION}}',
+                description: '{{OAUTH2_GENERIC_USER_DESCRIPTION}}',
+                image: '{{OAUTH2_GENERIC_USER_IMAGE}}',
+                phone: '{{OAUTH2_GENERIC_USER_PHONE}}',
+                urls: '{{OAUTH2_GENERIC_USER_URLS}}',
+                email: '{{OAUTH2_GENERIC_USER_EMAIL}}'
               }
             },
             authorize_params: { scope: "{{OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE}}" },
