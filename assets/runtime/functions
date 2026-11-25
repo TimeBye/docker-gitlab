@@ -51,6 +51,28 @@ exec_as_git() {
   fi
 }
 
+## Percent-encode a string so that it can be safely embedded in a URL (RFC 3986)
+# $1: string to encode
+urlencode() {
+  local string=${1}
+  local encoded=""
+  local char hex i
+  local LC_ALL=C
+  for ((i = 0; i < ${#string}; i++)); do
+    char=${string:i:1}
+    case ${char} in
+      [a-zA-Z0-9.~_-])
+        encoded+=${char}
+        ;;
+      *)
+        printf -v hex '%%%02X' "'${char}"
+        encoded+=${hex}
+        ;;
+    esac
+  done
+  printf '%s' "${encoded}"
+}
+
 ## Copies configuration template to the destination as the specified USER
 ### Looks up for overrides in ${USERCONF_TEMPLATES_DIR} before using the defaults from ${SYSCONF_TEMPLATES_DIR}
 # $1: copy-as user
@@ -294,7 +316,12 @@ gitlab_finalize_redis_parameters() {
 
 gitlab_check_redis_connection() {
   timeout=60
-  while ! redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} -n ${REDIS_DB_NUMBER} ping >/dev/null 2>&1
+  local auth_args=()
+  [[ -n ${REDIS_USER} ]]     && auth_args+=(--user "${REDIS_USER}")
+  [[ -n ${REDIS_PASSWORD} ]] && auth_args+=(-a "${REDIS_PASSWORD}")
+
+  local cmd=(redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" "${auth_args[@]}" -n "${REDIS_DB_NUMBER}" ping)
+  while ! "${cmd[@]}" >/dev/null 2>&1
   do
     timeout=$(expr $timeout - 1)
     if [[ $timeout -eq 0 ]]; then
@@ -305,6 +332,11 @@ gitlab_check_redis_connection() {
     echo -n "."
     sleep 1
   done
+
+  # Build URI userinfo: "user:pass@" for ACL, ":pass@" for legacy, empty for no auth
+  if [[ -n ${REDIS_USER} || -n ${REDIS_PASSWORD} ]]; then
+    export REDIS_USERINFO="$(urlencode "${REDIS_USER}"):$(urlencode "${REDIS_PASSWORD}")@"
+  fi
   echo
 }
 
@@ -317,6 +349,7 @@ gitlab_configure_redis() {
   update_template ${GITLAB_RESQUE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_USERINFO \
     REDIS_DB_NUMBER
 }
 
@@ -329,6 +362,7 @@ gitlab_configure_actioncable() {
   update_template ${GITLAB_ACTIONCABLE_CONFIG} \
     REDIS_HOST \
     REDIS_PORT \
+    REDIS_USERINFO \
     REDIS_DB_NUMBER
 }
 
@@ -711,24 +745,40 @@ gitlab_configure_oauth_saml() {
 
 gitlab_configure_oauth2_generic() {
   if [[ -n ${OAUTH2_GENERIC_APP_ID} && \
-        -n ${OAUTH2_GENERIC_APP_SECRET} ]]; then
+        -n ${OAUTH2_GENERIC_APP_SECRET} && \
+        -n ${OAUTH2_GENERIC_CLIENT_SITE} && \
+        -n ${OAUTH2_GENERIC_CLIENT_USER_INFO_URL} && \
+        -n ${OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL} && \
+        -n ${OAUTH2_GENERIC_CLIENT_TOKEN_URL} && \
+        -n ${OAUTH2_GENERIC_REDIRECT_URL} ]]; then
     echo "Configuring gitlab::oauth::generic..."
     OAUTH_ENABLED=${OAUTH_ENABLED:-true}
     update_template ${GITLAB_CONFIG} \
-    OAUTH2_GENERIC_APP_ID \
-    OAUTH2_GENERIC_APP_SECRET \
-    OAUTH2_GENERIC_CLIENT_SITE \
-    OAUTH2_GENERIC_CLIENT_USER_INFO_URL \
-    OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL \
-    OAUTH2_GENERIC_CLIENT_TOKEN_URL \
-    OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT \
-    OAUTH2_GENERIC_ID_PATH \
-    OAUTH2_GENERIC_USER_UID \
-    OAUTH2_GENERIC_USER_NAME \
-    OAUTH2_GENERIC_USER_EMAIL \
-    OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE \
-    OAUTH2_GENERIC_LABEL \
-    OAUTH2_GENERIC_NAME
+      OAUTH2_GENERIC_APP_ID \
+      OAUTH2_GENERIC_APP_SECRET \
+      OAUTH2_GENERIC_CLIENT_SITE \
+      OAUTH2_GENERIC_CLIENT_USER_INFO_URL \
+      OAUTH2_GENERIC_CLIENT_AUTHORIZE_URL \
+      OAUTH2_GENERIC_CLIENT_TOKEN_URL \
+      OAUTH2_GENERIC_CLIENT_END_SESSION_ENDPOINT \
+      OAUTH2_GENERIC_ID_PATH \
+      OAUTH2_GENERIC_USER_UID \
+      OAUTH2_GENERIC_USER_NAME \
+      OAUTH2_GENERIC_USER_EMAIL \
+      OAUTH2_GENERIC_USER_NICKNAME \
+      OAUTH2_GENERIC_USER_FIRST_NAME \
+      OAUTH2_GENERIC_USER_LAST_NAME \
+      OAUTH2_GENERIC_USER_LOCATION \
+      OAUTH2_GENERIC_USER_DESCRIPTION \
+      OAUTH2_GENERIC_USER_IMAGE \
+      OAUTH2_GENERIC_USER_PHONE \
+      OAUTH2_GENERIC_USER_URLS \
+      OAUTH2_GENERIC_REDIRECT_URL \
+      OAUTH2_GENERIC_STRATEGY_CLASS \
+      OAUTH2_GENERIC_ROOT_PATH \
+      OAUTH2_GENERIC_AUTHORIZE_PARAMS_SCOPE \
+      OAUTH2_GENERIC_LABEL \
+      OAUTH2_GENERIC_NAME
   else
       exec_as_git sed -i "/name: 'oauth2_generic'/,/{{OAUTH2_GENERIC_NAME}}/d" ${GITLAB_CONFIG}
   fi
@@ -873,7 +923,7 @@ gitlab_configure_oauth() {
     OAUTH_ALLOW_BYPASS_TWO_FACTOR
 
   case ${OAUTH_AUTO_SIGN_IN_WITH_PROVIDER} in
-    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|$OAUTH2_GENERIC_NAME|oidc|jwt)
+    cas3|google_oauth2|facebook|twitter|github|gitlab|bitbucket|saml|crowd|azure_oauth2|azure_activedirectory_v2|oauth2_generic|${OAUTH2_GENERIC_NAME}|oidc|jwt)
       update_template ${GITLAB_CONFIG} OAUTH_AUTO_SIGN_IN_WITH_PROVIDER
       ;;
     *)
@@ -1093,6 +1143,12 @@ gitlab_configure_cron_jobs() {
   else
     exec_as_git sed -i "/{{GITLAB_PIPELINE_SCHEDULE_WORKER_CRON}}/d" ${GITLAB_CONFIG}
   fi
+
+  if [[ -n "${GITLAB_EXTERNAL_DIFFS_MIGRATE_WORKER_CRON}" ]]; then
+    update_template ${GITLAB_CONFIG} GITLAB_EXTERNAL_DIFFS_MIGRATE_WORKER_CRON
+  else
+    exec_as_git sed -i "/{{GITLAB_EXTERNAL_DIFFS_MIGRATE_WORKER_CRON}}/d" ${GITLAB_CONFIG}
+  fi
 }
 
 gitlab_configure_analytics_google() {
@@ -1204,6 +1260,49 @@ gitlab_configure_artifacts() {
     GITLAB_ARTIFACTS_DIR
 }
 
+
+gitlab_configure_external_diffs() {
+  echo -n "Configuring gitlab::external_diffs"
+
+  if [[ ${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_ENABLED} == true ]]; then
+    echo ":object_store"
+
+    if [[ "${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER}" == "Google" ]]; then
+      echo " -> Google EXTERNAL_DIFFS provider selected removing aws config"
+      exec_as_git sed -i "/#start-external-diffs-aws/,/#end-external-diffs-aws/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#start-external-diffs-gcs/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#end-external-diffs-gcs/d" ${GITLAB_CONFIG}
+    fi
+    if [[ "${GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER}" == "AWS" ]]; then
+      echo " -> AWS EXTERNAL_DIFFS provider selected removing Google config"
+      exec_as_git sed -i "/#start-external-diffs-gcs/,/#end-external-diffs-gcs/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#start-external-diffs-aws/d" ${GITLAB_CONFIG}
+      exec_as_git sed -i "/#end-external-diffs-aws/d" ${GITLAB_CONFIG}
+    fi
+  fi
+
+  update_template ${GITLAB_CONFIG} \
+    GITLAB_EXTERNAL_DIFFS_ENABLED \
+    GITLAB_EXTERNAL_DIFFS_WHEN \
+    GITLAB_EXTERNAL_DIFFS_STORAGE_PATH \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_REMOTE_DIRECTORY \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_ENABLED \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_BACKGROUND_UPLOAD \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_PROXY_DOWNLOAD \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_PROVIDER \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ACCESS_KEY_ID \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SECRET_ACCESS_KEY \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_REGION \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_HOST \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_ENDPOINT \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_PATH_STYLE \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_AWS_SIGNATURE_VERSION \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_PROJECT \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_CLIENT_EMAIL \
+    GITLAB_EXTERNAL_DIFFS_OBJECT_STORE_CONNECTION_GOOGLE_JSON_KEY_LOCATION
+
+  echo
+}
 
 gitlab_configure_packages() {
   update_template ${GITLAB_CONFIG} \
@@ -1856,6 +1955,68 @@ generate_ssh_host_keys() {
   chmod 0644 ${GITLAB_DATA_DIR}/ssh/*.pub
 }
 
+configure_ssh_fail2ban() {
+  local jail=/etc/fail2ban/jail.d/gitlab-sshd.local
+  local program=/etc/supervisor/conf.d/gitlab-fail2ban.conf
+  local clients=/etc/fail2ban/gitlab-sshd.deny
+  local rule="sshd: ${clients}"
+
+  # Only this list is ours. Never rewrite hosts.deny on disable or unban.
+  if [[ ${GITLAB_SSH_FAIL2BAN_ENABLED} != true ]]; then
+    rm -f "${jail}" "${program}"
+    if [[ -f ${clients} ]]; then : > "${clients}"; fi
+    return 0
+  fi
+
+  # 无效用户只计首次 Invalid user，避免后续认证失败日志重复计数。
+  cat > /etc/fail2ban/filter.d/gitlab-sshd.conf <<'EOF'
+[Definition]
+datepattern = {NONE}
+failregex = ^Invalid user .* from <ADDR> port \d+(?: \[preauth\])?\s*$
+            ^Failed (?:publickey|password|keyboard-interactive(?:/pam)?|hostbased) for (?!invalid user )\S+ from <ADDR> port \d+ ssh2(?:: [^\r\n]+)?(?: \[preauth\])?\s*$
+EOF
+
+  # 专用名单只写地址；沿用 hostsdeny 的格式以兼容 IPv6。
+  cat > /etc/fail2ban/action.d/gitlab-hostsdeny.conf <<'EOF'
+[INCLUDES]
+before = hostsdeny.conf
+
+[Definition]
+actionban = echo '<ip_value>' >> <file>
+actionunban = IP=$(echo "<ip_value>" | sed 's/[][\.]/\\\0/g') && sed -i "/^$IP$/d" <file>
+
+[Init]
+file = /etc/fail2ban/gitlab-sshd.deny
+EOF
+
+  touch "${clients}"
+  grep -Fxq "${rule}" /etc/hosts.deny || printf '\n%s\n' "${rule}" >> /etc/hosts.deny
+  mkdir -p /run/fail2ban
+  touch "${GITLAB_LOG_DIR}/supervisor/sshd.log"
+  cat > "${jail}" <<EOF
+[sshd]
+enabled = true
+backend = polling
+filter = gitlab-sshd
+logpath = ${GITLAB_LOG_DIR}/supervisor/sshd.log tail
+usedns = no
+ignoreip = 127.0.0.0/8 ::1 ${GITLAB_SSH_FAIL2BAN_IGNOREIP}
+findtime = ${GITLAB_SSH_FAIL2BAN_FINDTIME}
+maxretry = ${GITLAB_SSH_FAIL2BAN_MAXRETRY}
+bantime = ${GITLAB_SSH_FAIL2BAN_BANTIME}
+action = gitlab-hostsdeny
+EOF
+  cat > "${program}" <<EOF
+[program:gitlab-fail2ban]
+; Drop stale entries after an unclean exit; Fail2ban restores active bans from its DB.
+command=/bin/sh -c ': > ${clients} && exec /usr/bin/fail2ban-server -xf --logtarget=STDOUT start'
+priority=19
+autorestart=true
+redirect_stderr=true
+stdout_logfile=${GITLAB_LOG_DIR}/supervisor/%(program_name)s.log
+EOF
+}
+
 update_ssh_listen_port() {
   sed -i "s|#Port 22|Port ${GITLAB_SSH_LISTEN_PORT}|g" /etc/ssh/sshd_config
 }
@@ -1899,6 +2060,7 @@ initialize_system() {
   update_ca_certificates
   generate_ssh_host_keys
   update_ssh_listen_port
+  configure_ssh_fail2ban
   configure_container_timezone
   install_configuration_templates
   rm -rf /var/run/supervisor.sock
@@ -2021,6 +2183,7 @@ configure_gitlab() {
   gitlab_configure_rack_attack
   gitlab_configure_ci
   gitlab_configure_artifacts
+  gitlab_configure_external_diffs
   gitlab_configure_packages
   gitlab_configure_terraform_state
   gitlab_configure_lfs
@@ -2115,8 +2278,38 @@ configure_gitlab_shell() {
       "s|custom_hooks_dir:.*|custom_hooks_dir: $GITLAB_SHELL_CUSTOM_HOOKS_DIR|g" \
       ${GITLAB_SHELL_CONFIG}
   fi
+
+  configure_gitlab_shell_authorized_keys_check
 }
 
+configure_gitlab_shell_authorized_keys_check() {
+  local command_dir="/usr/local/libexec/gitlab"
+  local command="${command_dir}/gitlab-shell-authorized-keys-check"
+  local checker="${command}.bin"
+  local sshd_config="/etc/ssh/sshd_config.d/sshd.conf"
+
+  install -d -o root -g root -m 0755 "${command_dir}"
+  install -o root -g root -m 0755 \
+    "${GITLAB_SHELL_INSTALL_DIR}/bin/gitlab-shell-authorized-keys-check" \
+    "${checker}"
+  cat > "${command}" <<EOF
+#!/bin/sh
+exec env GITLAB_SHELL_DIR=${GITLAB_SHELL_INSTALL_DIR} ${checker} "\$@"
+EOF
+  chown root:root "${command}"
+  chmod 0755 "${command}"
+
+  install -d -o root -g root -m 0755 "$(dirname "${sshd_config}")"
+  cat > "${sshd_config}" <<EOF
+Match User git
+  AuthorizedKeysCommand ${command} git %u %k
+  AuthorizedKeysCommandUser git
+  AuthorizedKeysFile none
+Match all
+EOF
+  chown root:root "${sshd_config}"
+  chmod 0644 "${sshd_config}"
+}
 
 configure_gitlab_pages() {
   if [[ ${GITLAB_PAGES_ENABLED} == true ]]; then
